@@ -1,0 +1,1031 @@
+openapi: "3.0.3"
+info:
+  title: "Smart Inventory & Stock Demand Forecasting System API"
+  version: "1.0.0"
+  description: "REST API untuk pengelolaan stok barang, transaksi, peminjaman, OCR dokumen, verifikasi, dan forecasting kebutuhan stok pada PT Jambi Agung Lestari."
+servers:
+  - url: "http://localhost:8000/api/v1"
+    description: "Development"
+  - url: "https://api.inventory.jambiagung.co.id/v1"
+    description: "Placeholder Production"
+
+tags:
+  - name: Auth
+    description: "Autentikasi pengguna"
+  - name: Items
+    description: "Data barang dan stok"
+  - name: Transactions
+    description: "Transaksi stok masuk dan keluar"
+  - name: Borrowings
+    description: "Peminjaman dan pengembalian barang"
+  - name: Documents
+    description: "Dokumen dan proses OCR"
+  - name: Forecasts
+    description: "Forecasting kebutuhan stok"
+  - name: AI
+    description: "Fitur AI OCR dan forecasting"
+
+paths:
+  /auth/login:
+    post:
+      summary: "Login pengguna"
+      description: "Memvalidasi username dan password lalu menghasilkan JWT."
+      operationId: loginUser
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserLoginRequest"
+      responses:
+        "200":
+          description: "Login berhasil"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: "Request tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Username atau password salah"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Validasi input gagal"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /documents/ocr-parse:
+    post:
+      summary: "Membaca dan memproses dokumen dengan OCR"
+      description: "Mengunggah dokumen dan menjalankan OCR. Dokumen yang berhasil diproses berada pada status needs_verification sampai diverifikasi Admin."
+      operationId: parseDocumentOcr
+      tags: [Documents, AI]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, document_type]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "File dokumen yang akan diproses."
+                document_type:
+                  type: string
+                  enum: [receipt, borrowing_evidence]
+                  description: "Jenis dokumen."
+      responses:
+        "200":
+          description: "OCR berhasil diproses"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentParseResponse"
+        "400":
+          description: "File atau tipe dokumen tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "OCR gagal atau confidence terlalu rendah"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "504":
+          description: "OCR timeout melebihi batas waktu"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /documents/{id}:
+    get:
+      summary: "Melihat detail dokumen OCR"
+      description: "Mengambil status dan hasil pemrosesan dokumen."
+      operationId: getDocument
+      tags: [Documents]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: "Detail dokumen"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentParseResponse"
+        "400":
+          description: "Parameter tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "Dokumen tidak ditemukan"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /documents/{id}/verify:
+    post:
+      summary: "Memverifikasi hasil OCR"
+      description: "Admin memvalidasi atau mengoreksi hasil OCR. Dokumen yang disetujui berubah menjadi verified."
+      operationId: verifyDocument
+      tags: [Documents, AI]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerificationRequest"
+      responses:
+        "200":
+          description: "Verifikasi berhasil"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentParseResponse"
+        "400":
+          description: "Status verifikasi tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: "Pengguna bukan Admin"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Data OCR belum lengkap untuk diverifikasi"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /transactions:
+    post:
+      summary: "Mencatat transaksi stok"
+      description: "Menyimpan transaksi stok masuk atau keluar. user_id dan verified ditentukan oleh backend berdasarkan autentikasi dan aturan verifikasi."
+      operationId: createTransaction
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransactionRequest"
+      responses:
+        "201":
+          description: "Transaksi berhasil dibuat"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionResponse"
+        "400":
+          description: "Data transaksi tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Validasi transaksi gagal atau dokumen OCR belum verified"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      summary: "Melihat riwayat transaksi stok"
+      description: "Mengambil daftar transaksi stok masuk dan keluar."
+      operationId: listTransactions
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: item_id
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - in: query
+          name: transaction_type
+          schema:
+            type: string
+            enum: [in, out]
+        - in: query
+          name: start_date
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end_date
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: "Daftar transaksi"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TransactionResponse"
+        "400":
+          description: "Filter tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Parameter query tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /transactions/{id}:
+    get:
+      summary: "Melihat detail transaksi"
+      description: "Mengambil satu transaksi berdasarkan ID."
+      operationId: getTransaction
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TransactionId"
+      responses:
+        "200":
+          description: "Detail transaksi"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionResponse"
+        "400":
+          description: "ID tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "Transaksi tidak ditemukan"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /borrowings:
+    post:
+      summary: "Membuat peminjaman barang"
+      description: "Mencatat peminjaman barang oleh pengguna."
+      operationId: createBorrowing
+      tags: [Borrowings]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBorrowingRequest"
+      responses:
+        "201":
+          description: "Peminjaman berhasil dibuat"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BorrowingResponse"
+        "400":
+          description: "Data peminjaman tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Stok tidak mencukupi atau validasi gagal"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      summary: "Melihat daftar peminjaman"
+      description: "Mengambil data peminjaman berdasarkan status atau peminjam."
+      operationId: listBorrowings
+      tags: [Borrowings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [borrowed, returned]
+        - in: query
+          name: borrower_id
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: "Daftar peminjaman"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BorrowingResponse"
+        "400":
+          description: "Filter tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Parameter query tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /borrowings/{id}/return:
+    put:
+      summary: "Mengembalikan barang pinjaman"
+      description: "Mengubah status peminjaman menjadi returned dan mencatat waktu pengembalian."
+      operationId: returnBorrowing
+      tags: [Borrowings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BorrowingId"
+      responses:
+        "200":
+          description: "Barang berhasil dikembalikan"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BorrowingResponse"
+        "400":
+          description: "Peminjaman tidak dapat dikembalikan"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "Peminjaman tidak ditemukan"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Status peminjaman sudah returned"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/forecast:
+    post:
+      summary: "Melakukan forecasting kebutuhan stok"
+      description: "Menggunakan data historis untuk menghasilkan forecast bulanan, reorder point, dan status stok sebagai decision support."
+      operationId: createForecast
+      tags: [Forecasts, AI]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForecastRequest"
+      responses:
+        "200":
+          description: "Forecast berhasil"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForecastResponse"
+        "400":
+          description: "Request forecasting tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Data historis tidak mencukupi atau model tidak dapat menghasilkan prediksi"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "504":
+          description: "Proses forecasting timeout"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /items:
+    get:
+      summary: "Melihat master barang dan stok"
+      description: "Mengambil daftar barang beserta stok saat ini."
+      operationId: listItems
+      tags: [Items]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: "Daftar barang"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ItemResponse"
+        "400":
+          description: "Request tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Parameter tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /reports/stock:
+    get:
+      summary: "Melihat laporan stok"
+      description: "Mengambil data stok barang untuk kebutuhan laporan."
+      operationId: getStockReport
+      tags: [Items]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: "Laporan stok"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ItemResponse"
+        "400":
+          description: "Request tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Token tidak valid"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: "Request tidak dapat diproses"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Kesalahan server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    DocumentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    TransactionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    BorrowingId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
+  schemas:
+    UserLoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          format: password
+          minLength: 1
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, user]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum: [Bearer]
+        user:
+          $ref: "#/components/schemas/UserResponse"
+
+    UserResponse:
+      type: object
+      required: [id, role_id, username, role]
+      properties:
+        id:
+          type: integer
+          format: int64
+        role_id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        role:
+          type: string
+          enum: [admin_gudang, karyawan, manajer]
+
+    ItemResponse:
+      type: object
+      required: [id, code, name, unit, stock, minimum_stock, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        unit:
+          type: string
+        stock:
+          type: number
+          format: double
+          minimum: 0
+        minimum_stock:
+          type: number
+          format: double
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateTransactionRequest:
+      type: object
+      required: [item_id, transaction_type, quantity, transaction_date]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+          minimum: 1
+        document_id:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+        transaction_type:
+          type: string
+          enum: [in, out]
+        quantity:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+        transaction_date:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          nullable: true
+
+    TransactionResponse:
+      type: object
+      required: [id, item_id, user_id, transaction_type, quantity, transaction_date, verified, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        item_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        document_id:
+          type: integer
+          format: int64
+          nullable: true
+        transaction_type:
+          type: string
+          enum: [in, out]
+        quantity:
+          type: number
+          format: double
+        transaction_date:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          nullable: true
+        verified:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateBorrowingRequest:
+      type: object
+      required: [item_id, borrower_id, quantity, borrowing_date]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+          minimum: 1
+        borrower_id:
+          type: integer
+          format: int64
+          minimum: 1
+        quantity:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+        borrowing_date:
+          type: string
+          format: date-time
+        expected_return_date:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    BorrowingResponse:
+      type: object
+      required: [id, item_id, borrower_id, quantity, status, borrowing_date, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        item_id:
+          type: integer
+          format: int64
+        borrower_id:
+          type: integer
+          format: int64
+        quantity:
+          type: number
+          format: double
+        status:
+          type: string
+          enum: [borrowed, returned]
+        borrowing_date:
+          type: string
+          format: date-time
+        expected_return_date:
+          type: string
+          format: date-time
+          nullable: true
+        returned_at:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DocumentParseResponse:
+      type: object
+      required: [id, user_id, file_name, file_path, mime_type, document_type, status, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        file_name:
+          type: string
+        file_path:
+          type: string
+        mime_type:
+          type: string
+        document_type:
+          type: string
+          enum: [receipt, borrowing_evidence]
+        status:
+          type: string
+          enum: [uploaded, processing, needs_verification, verified, rejected, needs_manual_input, failed]
+        ocr_text:
+          type: string
+          nullable: true
+        extracted_data:
+          type: object
+          nullable: true
+          additionalProperties: true
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          nullable: true
+        verified_by:
+          type: integer
+          format: int64
+          nullable: true
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VerificationRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [verified, rejected]
+        extracted_data:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    ForecastRequest:
+      type: object
+      required: [item_id, forecast_period]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+          minimum: 1
+        forecast_period:
+          type: string
+          enum: [monthly]
+
+    ForecastResponse:
+      type: object
+      required: [id, item_id, forecast_period, forecast_value, reorder_point, current_stock, stock_status, processed_at, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        item_id:
+          type: integer
+          format: int64
+        forecast_period:
+          type: string
+          enum: [monthly]
+        forecast_value:
+          type: number
+          format: double
+        reorder_point:
+          type: number
+          format: double
+        current_stock:
+          type: number
+          format: double
+        stock_status:
+          type: string
+          enum: [normal, critical, out_of_stock]
+        model_name:
+          type: string
+          nullable: true
+        model_accuracy:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          nullable: true
+        processed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
